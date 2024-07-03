@@ -166,6 +166,53 @@ void Tensor<float>::Padding(const std::vector<uint32_t>& pads,
   uint32_t pad_cols2 = pads.at(3);  // right
 
   // 请补充代码
+  const uint32_t rows = this->rows();
+  const uint32_t cols = this->cols();
+  const uint32_t channels = this->data_.n_slices;
+
+//  想尝试用insert_rows/cols一直有bug，遂放弃
+//  arma::fcube value_holder1 = arma::fcube(pad_rows2, cols, channels);
+//  value_holder1.fill(padding_value);
+//  this->data_.insert_rows(rows-1, value_holder1);
+//
+//  arma::fcube value_holder2 = arma::fcube(pad_rows1, cols, channels);
+//  value_holder2.fill(padding_value);
+//  this->data_.insert_rows(0, value_holder2);
+//
+//  arma::fcube value_holder3 = arma::fcube(rows+pad_rows1+pad_rows2, pad_cols2, channels);
+//  value_holder3.fill(padding_value);
+//  this->data_.insert_cols(rows-1, value_holder3);
+//
+//  arma::fcube value_holder4 = arma::fcube(rows+pad_rows1+pad_rows2, pad_cols1, channels);
+//  value_holder4.fill(padding_value);
+//  this->data_.insert_rows(0, value_holder4);
+// 当前张量的维度
+
+    // 新张量的维度
+    uint32_t new_rows = rows + pad_rows1 + pad_rows2;
+    uint32_t new_cols = cols + pad_cols1 + pad_cols2;
+
+    // 创建一个新的张量用于存储填充后的数据
+    arma::fcube padded_tensor(new_rows, new_cols,channels);
+    this->raw_shapes_ = std::vector<uint32_t>{channels,new_rows,new_cols};
+
+    // 填充新张量
+    for (uint32_t ch = 0; ch < channels; ++ch) {
+        for (uint32_t r = 0; r < new_rows; ++r) {
+            for (uint32_t c = 0; c < new_cols; ++c) {
+                if (r < pad_rows1 || r >= new_rows - pad_rows2 ||
+                    c < pad_cols1 || c >= new_cols - pad_cols2) {
+                // 如果超出原始张量的边界，则赋值padding_value
+                    padded_tensor.at(r, c, ch) = padding_value;
+                } else {
+                    // 否则复制原始张量的数据
+                    padded_tensor.at(r, c, ch) = this->data_.at(r - pad_rows1 , c - pad_cols1,ch);
+                }
+            }
+        }
+    }
+
+    this->data_ = padded_tensor;
 }
 
 void Tensor<float>::Fill(float value) {
@@ -176,8 +223,8 @@ void Tensor<float>::Fill(float value) {
 void Tensor<float>::Fill(const std::vector<float>& values, bool row_major) {
   CHECK(!this->data_.empty());
   const uint32_t total_elems = this->data_.size();
-  CHECK_EQ(values.size(), total_elems);
-  if (row_major) {
+  CHECK_EQ(values.size(), total_elems);  // check the data size equals matrix shape size
+  if (row_major) { // need to transform matrix after copying data
     const uint32_t rows = this->rows();
     const uint32_t cols = this->cols();
     const uint32_t planes = rows * cols;
@@ -187,9 +234,9 @@ void Tensor<float>::Fill(const std::vector<float>& values, bool row_major) {
       auto& channel_data = this->data_.slice(i);
       const arma::fmat& channel_data_t =
           arma::fmat(values.data() + i * planes, this->cols(), this->rows());
-      channel_data = channel_data_t.t();
+      channel_data = channel_data_t.t();  // make row major to column major
     }
-  } else {
+  } else {  // can copy data directly
     std::copy(values.begin(), values.end(), this->data_.memptr());
   }
 }
@@ -204,6 +251,12 @@ void Tensor<float>::Show() {
 void Tensor<float>::Flatten(bool row_major) {
   CHECK(!this->data_.empty());
   // 请补充代码
+  const uint32_t rows = this->rows();
+  const uint32_t cols = this->cols();
+  const uint32_t planes = rows * cols;
+  const uint32_t channels = this->data_.n_slices;
+
+  this->Reshape({planes*channels}, row_major);
 }
 
 void Tensor<float>::Rand() {
